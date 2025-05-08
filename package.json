@@ -17,7 +17,8 @@
     "lint:fix": "next lint --fix",
     "preview": "next build && next start",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "generate-cert": "node scripts/generate-cert.js"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.17.0",
@@ -49,6 +50,7 @@
     "react-dom": "^19.0.0",
     "shadcn": "^2.3.0",
     "sonner": "^2.0.3",
+    "spotify-web-api-node": "^5.0.2",
     "superjson": "^2.2.2",
     "tailwind-merge": "^3.2.0",
     "tailwindcss-animate": "^1.0.7",
@@ -61,6 +63,7 @@
     "@types/node": "^20.14.10",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/spotify-web-api-node": "^5.0.11",
     "autoprefixer": "^10.4.14",
     "drizzle-kit": "^0.30.5",
     "eslint": "^9.23.0",
