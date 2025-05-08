@@ -7,3 +7,4 @@
 ## Services Used
 - [x] Netlify (Hosting)
 - [x] Clerk (Auth)
+- [ ] Spotify Web API
