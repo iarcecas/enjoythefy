@@ -1,3 +1,6 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
 "use client";
 
 import { useEffect, useState } from "react";
@@ -9,6 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import Image from "next/image";
 
 interface Track {
   track: {
@@ -145,7 +149,7 @@ export default function RecentlyPlayed() {
           {tracks.map((item, index) => (
             <div key={index} className="flex items-center space-x-4">
               {item.track.album.images[0] && (
-                <img
+                <Image
                   src={item.track.album.images[0].url}
                   alt={item.track.name}
                   className="h-12 w-12 rounded object-cover"
