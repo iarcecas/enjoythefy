@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { ClerkProvider } from "@clerk/nextjs";
 import { Inter } from "next/font/google";
 import { TRPCReactProvider } from "~/trpc/react";

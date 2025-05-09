@@ -1,0 +1,2 @@
+[functions."spotify-history"]
+  schedule = "*/15 * * * *" # every 15 minutes
