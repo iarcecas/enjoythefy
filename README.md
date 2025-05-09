@@ -7,4 +7,7 @@
 ## Services Used
 - [x] Netlify (Hosting)
 - [x] Clerk (Auth)
-- [ ] Spotify Web API
+- [x] Spotify Web API
+
+### Ideas
+- [ ] User can see information about the track, so story about this song (gen AI)
