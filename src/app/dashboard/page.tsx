@@ -28,11 +28,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  getRecentlyPlayed,
-  getTopTracks,
-  getListeningStats,
-} from "@/lib/spotify";
 import SpotifyConnect from "@/components/SpotifyConnect";
 
 interface Track {
@@ -50,12 +45,22 @@ interface ListeningStats {
   tracksPlayed: number;
   topGenre: string;
   likedSongs: number;
+  prevListeningTime: string | null;
+  prevTracksPlayed: number | null;
+  prevTopGenre: string | null;
+  prevLikedSongs: number | null;
 }
 
-interface SpotifyMetadata {
-  access_token: string;
-  refresh_token: string;
-  expires_at: number;
+interface APIStats {
+  listening_time: string;
+  tracks_played: string;
+  top_genre: string;
+  liked_songs: string;
+}
+
+interface APIStatsResponse {
+  current?: APIStats;
+  previous?: APIStats;
 }
 
 interface NavItemProps {
@@ -80,6 +85,15 @@ interface ActivityItemProps {
   title: string;
   subtitle: string;
   time: string;
+}
+
+interface HistoryItem {
+  track_id: string;
+  track_name: string;
+  artist_name: string;
+  album_name: string;
+  image_url: string;
+  played_at: string;
 }
 
 function NavItem({
@@ -150,6 +164,15 @@ function ActivityItem({ icon, title, subtitle, time }: ActivityItemProps) {
   );
 }
 
+function parseListeningTime(time: string): number {
+  // e.g. '4h 43m' => 283
+  const match = /(\d+)h\s*(\d+)m/.exec(time);
+  if (!match) return 0;
+  const hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  return hours * 60 + minutes;
+}
+
 export default function Dashboard() {
   const [collapsed, setCollapsed] = useState(false);
   const [recentlyPlayed, setRecentlyPlayed] = useState<Track[]>([]);
@@ -159,49 +182,80 @@ export default function Dashboard() {
     tracksPlayed: 0,
     topGenre: "Unknown",
     likedSongs: 0,
+    prevListeningTime: null,
+    prevTracksPlayed: null,
+    prevTopGenre: null,
+    prevLikedSongs: null,
   });
   const [isConnected, setIsConnected] = useState(false);
-  const { user } = useUser();  
+  const { user } = useUser();
 
   useEffect(() => {
-    const checkSpotifyConnection = async () => {
+    const fetchData = async () => {
       if (!user) return;
 
-      // Fetch Spotify connection info from secure API route
-      const res = await fetch("/api/me/spotify");
-      const { spotify: spotifyData } = await res.json() as { spotify: SpotifyMetadata };
-
-      if (!spotifyData) {
-        setIsConnected(false);
-        return;
-      }
-
-      const { access_token, expires_at } = spotifyData;
-
-      if (Date.now() >= expires_at) {
-        setIsConnected(false);
-        return;
-      }
-
-      setIsConnected(true);
       try {
-        const [recent, top, listeningStats] = await Promise.all([
-          getRecentlyPlayed(access_token),
-          getTopTracks(access_token),
-          getListeningStats(access_token),
+        const [historyRes, statsRes, topTracksRes] = await Promise.all([
+          fetch("/api/listening-history"),
+          fetch("/api/listening-stats"),
+          fetch("/api/top-tracks"),
         ]);
 
-        setRecentlyPlayed(recent);
-        setTopTracks(top);
-        console.log("listeningStats", listeningStats);
-        setStats(listeningStats);
+        if (!historyRes.ok || !statsRes.ok || !topTracksRes.ok) {
+          throw new Error("Failed to fetch data");
+        }
+
+        const history = (await historyRes.json()) as HistoryItem[];
+        const statsData = (await statsRes.json()) as APIStatsResponse;
+        const topTracksData = (await topTracksRes.json()) as Track[];
+        console.log("topTracksData: ", topTracksData);
+
+        setRecentlyPlayed(
+          history.map((item) => ({
+            id: item.track_id,
+            name: item.track_name,
+            artist: item.artist_name,
+            album: item.album_name,
+            image: item.image_url,
+            playedAt: new Date(item.played_at).toLocaleString(),
+          })),
+        );
+
+        setTopTracks(
+          topTracksData.map((item) => ({
+            id: item.id,
+            name: item.name,
+            artist: item.artist,
+            album: item.album,
+            image: item.image,
+            plays: item.plays,
+          })),
+        );
+
+        // Use current and previous month stats
+        const current = statsData.current;
+        const previous = statsData.previous;
+        setStats({
+          listeningTime: current?.listening_time ?? "0h 0m",
+          tracksPlayed: current ? parseInt(current.tracks_played, 10) : 0,
+          topGenre: current?.top_genre ?? "Unknown",
+          likedSongs: current ? parseInt(current.liked_songs, 10) : 0,
+          prevListeningTime: previous?.listening_time ?? null,
+          prevTracksPlayed: previous
+            ? parseInt(previous.tracks_played, 10)
+            : null,
+          prevTopGenre: previous?.top_genre ?? null,
+          prevLikedSongs: previous ? parseInt(previous.liked_songs, 10) : null,
+        });
+
+        setIsConnected(true);
       } catch (error) {
-        console.error("Error fetching Spotify data:", error);
+        console.error("Error fetching data:", error);
         setIsConnected(false);
       }
     };
 
-    void checkSpotifyConnection();
+    void fetchData();
   }, [user]);
 
   if (!isConnected) {
@@ -466,23 +520,50 @@ export default function Dashboard() {
                 title="Listening Time"
                 value={stats.listeningTime}
                 subtitle="This month"
-                change="+12% from last month"
-                positive={true}
+                change={(() => {
+                  if (stats.prevListeningTime) {
+                    const curr = parseListeningTime(stats.listeningTime);
+                    const prev = parseListeningTime(stats.prevListeningTime);
+                    if (prev > 0) {
+                      const percent = ((curr - prev) * 100) / prev;
+                      return `${percent > 0 ? "+" : ""}${percent.toFixed(2)}% from last month`;
+                    }
+                  }
+                  return "";
+                })()}
+                positive={
+                  stats.prevListeningTime
+                    ? parseListeningTime(stats.listeningTime) >=
+                      parseListeningTime(stats.prevListeningTime)
+                    : true
+                }
               />
               <StatCard
                 icon={<Music className="h-8 w-8 text-purple-400" />}
                 title="Tracks Played"
                 value={stats.tracksPlayed.toString()}
                 subtitle="This month"
-                change="+24 from last week"
-                positive={true}
+                change={
+                  stats.prevTracksPlayed !== null
+                    ? `${stats.tracksPlayed - stats.prevTracksPlayed > 0 ? "+" : ""}${stats.tracksPlayed - stats.prevTracksPlayed} from last month`
+                    : ""
+                }
+                positive={
+                  stats.prevTracksPlayed !== null
+                    ? stats.tracksPlayed >= (stats.prevTracksPlayed ?? 0)
+                    : true
+                }
               />
               <StatCard
                 icon={<Disc3 className="h-8 w-8 text-purple-400" />}
                 title="Top Genre"
                 value={stats.topGenre}
                 subtitle="Based on recent plays"
-                change="Changed from Pop"
+                change={
+                  stats.prevTopGenre && stats.prevTopGenre !== stats.topGenre
+                    ? `Changed from ${stats.prevTopGenre}`
+                    : ""
+                }
                 positive={false}
               />
               <StatCard
@@ -490,8 +571,16 @@ export default function Dashboard() {
                 title="Liked Songs"
                 value={stats.likedSongs.toString()}
                 subtitle="Total in library"
-                change="+8 new this month"
-                positive={true}
+                change={
+                  stats.prevLikedSongs !== null
+                    ? `${stats.likedSongs - stats.prevLikedSongs > 0 ? "+" : ""}${stats.likedSongs - stats.prevLikedSongs} new this month`
+                    : ""
+                }
+                positive={
+                  stats.prevLikedSongs !== null
+                    ? stats.likedSongs >= (stats.prevLikedSongs ?? 0)
+                    : true
+                }
               />
             </div>
           </section>
@@ -523,6 +612,9 @@ export default function Dashboard() {
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
                         Album
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
+                        Plays
                       </th>
                       <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-400">
                         Actions
@@ -559,6 +651,9 @@ export default function Dashboard() {
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-300">
                           {track.album}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-300">
+                          {track.plays}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-right text-sm font-medium">
                           <Button

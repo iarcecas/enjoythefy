@@ -26,7 +26,7 @@ const globalForDb = globalThis as unknown as { pool: Pool | undefined };
 const pool =
   globalForDb.pool ??
   mysql.createPool({
-    host: process.env.SINGLESTORE_HOST ?? "localhost",
+    host: process.env.SINGLESTORE_HOST ?? "s",
     port: parseInt(process.env.SINGLESTORE_PORT ?? "3306"),
     user: process.env.SINGLESTORE_USER ?? "root",
     password: process.env.SINGLESTORE_PASS ?? "",
@@ -216,6 +216,117 @@ const handler: Handler = async (event, context) => {
         );
         // Continue with the next user even if this one fails
       }
+
+      // --- Monthly Stats Aggregation ---
+      // Get current year and month
+      const now = new Date();
+      const year = now.getFullYear().toString();
+      const month = (now.getMonth() + 1).toString().padStart(2, "0");
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+      // Fetch all listening history for this user for this month
+      const [monthlyHistoryRows] = await connection.execute(
+        `SELECT * FROM spotify_listening_history WHERE user_id = ? AND played_at >= ? AND played_at < ?`,
+        [user.id, monthStart, monthEnd],
+      );
+      type MonthlyHistoryRow = {
+        track_id: string;
+        track_name: string;
+        artist_name: string;
+        album_name: string;
+        image_url: string;
+      };
+      const monthlyHistory: MonthlyHistoryRow[] = Array.isArray(
+        monthlyHistoryRows,
+      )
+        ? (monthlyHistoryRows as MonthlyHistoryRow[])
+        : [];
+      const tracksPlayed = monthlyHistory.length;
+      const avgTrackLength = 3.5; // minutes
+      const totalMinutes = tracksPlayed * avgTrackLength;
+      const hours = Math.floor(totalMinutes / 60);
+      const minutes = Math.floor(totalMinutes % 60);
+      const listeningTime = `${hours}h ${minutes}m`;
+
+      // --- Top Genre Calculation ---
+      // Collect all artist names from this month's tracks
+      const artistNames = monthlyHistory
+        .map((row) => row.artist_name)
+        .filter(Boolean);
+      // Fetch genres for unique artists (limit to 10 for rate limits)
+      const uniqueArtistNames = Array.from(new Set(artistNames)).slice(0, 10);
+      const genreCounts: Record<string, number> = {};
+      for (const artistName of uniqueArtistNames) {
+        try {
+          // Search for artist to get their Spotify ID
+          const searchRes = await spotifyApi.searchArtists(artistName, {
+            limit: 1,
+          });
+          const artist = searchRes.body.artists?.items?.[0];
+          if (artist?.genres) {
+            for (const genre of artist.genres) {
+              genreCounts[genre] = (genreCounts[genre] || 0) + 1;
+            }
+          }
+        } catch (err) {
+          // Ignore errors for individual artists
+        }
+      }
+      const topGenre =
+        Object.entries(genreCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ||
+        "Unknown";
+
+      // --- Liked Songs ---
+      let likedSongs = 0;
+      try {
+        const likedRes = await spotifyApi.getMySavedTracks({ limit: 1 });
+        likedSongs = likedRes.body.total || 0;
+      } catch (err) {
+        likedSongs = 0;
+      }
+
+      // --- Top Tracks Calculation ---
+      const trackMap = new Map();
+      for (const row of monthlyHistory) {
+        if (!trackMap.has(row.track_id)) {
+          trackMap.set(row.track_id, {
+            id: row.track_id,
+            name: row.track_name,
+            artist: row.artist_name,
+            album: row.album_name,
+            image: row.image_url,
+            plays: 1,
+          });
+        } else {
+          (trackMap.get(row.track_id) as { plays: number }).plays++;
+        }
+      }
+      const topTracks = Array.from(trackMap.values())
+        .sort((a, b) => (b as { plays: number }).plays - (a as { plays: number }).plays)
+        .slice(0, 5);
+      
+      // Store as JSON string
+      const topTracksJson = JSON.stringify(topTracks);
+
+      // --- Upsert monthly stats ---
+      const statsId = `${user.id}_${year}_${month}`;
+      await connection.execute(
+        `REPLACE INTO user_monthly_stats (id, user_id, year, month, listening_time, tracks_played, top_genre, liked_songs, top_tracks, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+        [
+          statsId,
+          user.id,
+          year,
+          month,
+          listeningTime,
+          tracksPlayed.toString(),
+          topGenre,
+          likedSongs.toString(),
+          topTracksJson,
+        ],
+      );
+      // --- End Monthly Stats Aggregation ---
     }
 
     return {

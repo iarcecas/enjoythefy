@@ -1,5 +1,7 @@
-import { createClient, type Client } from "@libsql/client";
-import { drizzle } from "drizzle-orm/libsql";
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+import { drizzle } from "drizzle-orm/singlestore";
+import { createPool, type Pool } from "mysql2/promise";
 
 import { env } from "~/env";
 import * as schema from "./schema";
@@ -9,11 +11,22 @@ import * as schema from "./schema";
  * update.
  */
 const globalForDb = globalThis as unknown as {
-  client: Client | undefined;
+  conn: Pool | undefined;
 };
 
-export const client =
-  globalForDb.client ?? createClient({ url: env.DATABASE_URL });
-if (env.NODE_ENV !== "production") globalForDb.client = client;
+export const conn =
+  globalForDb.conn ??
+  createPool({
+    host: env.SINGLESTORE_HOST ?? "localhost",
+    port: parseInt(env.SINGLESTORE_PORT ?? "3306"),
+    user: env.SINGLESTORE_USER ?? "root",
+    password: env.SINGLESTORE_PASS ?? "",
+    database: env.SINGLESTORE_DB_NAME ?? "mydb",    
+    maxIdle: 0,
+    ssl: {
+      rejectUnauthorized: false,
+    },
+  });
+if (env.NODE_ENV !== "production") globalForDb.conn = conn;
 
-export const db = drizzle(client, { schema });
+export const db = drizzle(conn, { schema });
