@@ -9,5 +9,6 @@ export async function GET() {
   // privateMetadata is only available here
   return NextResponse.json({
     spotify: user.privateMetadata?.spotify ?? null,
+    spotify_connected: user.privateMetadata?.spotify_connected ?? null,
   });
 }

@@ -29,13 +29,16 @@ export async function GET(request: Request) {
     // Store tokens in Clerk user metadata
     const clerk = await import("@clerk/nextjs/server");
     const client = await clerk.clerkClient();
+    const user = await client.users.getUser(userId);
     await client.users.updateUserMetadata(userId, {
       privateMetadata: {
+        ...user.privateMetadata,
         spotify: {
           access_token,
           refresh_token,
           expires_at: Date.now() + expires_in * 1000,
         },
+        spotify_connected: true,
       },
     });
 

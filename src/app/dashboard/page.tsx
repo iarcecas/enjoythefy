@@ -96,6 +96,19 @@ interface HistoryItem {
   played_at: string;
 }
 
+const FUN_MESSAGES = [
+  "Tuning your musical taste...",
+  "Warming up the vinyl...",
+  "Summoning the Spotify elves...",
+  "Counting your beats per minute...",
+  "Untangling your headphone wires...",
+  "Finding your next earworm...",
+];
+
+function getRandomMessage() {
+  return FUN_MESSAGES[Math.floor(Math.random() * FUN_MESSAGES.length)];
+}
+
 function NavItem({
   icon,
   label,
@@ -186,11 +199,42 @@ export default function Dashboard() {
     prevTracksPlayed: null,
     prevTopGenre: null,
     prevLikedSongs: null,
-  });
-  const [isConnected, setIsConnected] = useState(false);
-  const { user } = useUser();
+  });  
+  const [loading, setLoading] = useState(true);
+  const [funMessage, setFunMessage] = useState(getRandomMessage());
+  const [isSpotifyConnected, setIsSpotifyConnected] = useState<boolean | null>(
+    null,
+  );
+  const { user, isLoaded } = useUser();
 
   useEffect(() => {
+    // Fetch spotify_connected from the secure API route
+    const fetchSpotifyConnected = async () => {
+      const res = await fetch("/api/me/spotify");
+      if (!res.ok) {
+        setIsSpotifyConnected(false);
+        return;
+      }
+      const dataRaw: unknown = await res.json();
+      const data = dataRaw as {
+        spotify_connected?: boolean;
+        spotify?: { access_token?: string };
+      };
+      setIsSpotifyConnected(
+        data.spotify_connected === true || !!data.spotify?.access_token,
+      );
+    };
+    if (isLoaded) {
+      void fetchSpotifyConnected();
+    }
+  }, [isLoaded]);
+
+  useEffect(() => {
+    if (!isSpotifyConnected) return;
+    setLoading(true);
+    setFunMessage(getRandomMessage());
+    // Simulate loading for at least 1s for animation
+    const timer = setTimeout(() => setLoading(false), 1000);
     const fetchData = async () => {
       if (!user) return;
 
@@ -248,17 +292,28 @@ export default function Dashboard() {
           prevLikedSongs: previous ? parseInt(previous.liked_songs, 10) : null,
         });
 
-        setIsConnected(true);
+        
       } catch (error) {
-        console.error("Error fetching data:", error);
-        setIsConnected(false);
+        console.error("Error fetching data:", error);        
+      } finally {
+        setLoading(false);
       }
     };
 
     void fetchData();
-  }, [user]);
+    return () => clearTimeout(timer);
+  }, [isSpotifyConnected, user]);
 
-  if (!isConnected) {
+  if (!isLoaded || isSpotifyConnected === null) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-white">
+        Loading user...
+      </div>
+    );
+  }
+
+  if (!isSpotifyConnected) {
+    // Show connect prompt only if not connected
     return (
       <div className="flex min-h-screen bg-black text-white">
         {/* Sidebar */}
@@ -366,10 +421,21 @@ export default function Dashboard() {
           </header>
 
           {/* Dashboard Content */}
-          <main className="p-6">
+          <main className="flex flex-1 items-center justify-center p-6">
             <SpotifyConnect />
           </main>
         </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    // Show loading animation and fun message
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-black text-white">
+        <div className="mb-6 h-24 w-24 animate-spin rounded-full border-8 border-purple-500/20 border-t-purple-500"></div>
+        <div className="mb-2 text-2xl font-bold">Loading your dashboard...</div>
+        <div className="text-lg text-purple-300">{funMessage}</div>
       </div>
     );
   }

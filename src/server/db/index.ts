@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { drizzle } from "drizzle-orm/singlestore";
 import { createPool, type Pool } from "mysql2/promise";
 

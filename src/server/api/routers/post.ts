@@ -20,8 +20,40 @@ export const postRouter = createTRPCRouter({
     }),
 
   getLatest: publicProcedure.query(async ({ ctx }) => {
-    return ctx.db.query.posts.findFirst({
-      orderBy: (posts, { desc }) => [desc(posts.createdAt)],
-    });
+    // TODO: Properly type ctx.db.query if possible
+    const dbQuery = ctx.db.query;
+    function hasPosts(obj: unknown): obj is { posts: unknown } {
+      return typeof obj === "object" && obj !== null && "posts" in obj;
+    }
+    function hasFindFirst(
+      obj: unknown,
+    ): obj is { findFirst: (...args: unknown[]) => Promise<unknown> } {
+      return (
+        typeof obj === "object" &&
+        obj !== null &&
+        "findFirst" in obj &&
+        typeof (obj as { findFirst?: unknown }).findFirst === "function"
+      );
+    }
+    if (hasPosts(dbQuery)) {
+      const postsQuery = dbQuery.posts;
+      if (hasFindFirst(postsQuery)) {
+        return postsQuery.findFirst({
+          orderBy: (
+            posts: unknown,
+            { desc }: { desc: (field: unknown) => unknown },
+          ) => [
+            desc(
+              typeof posts === "object" &&
+                posts !== null &&
+                "createdAt" in posts
+                ? (posts as { createdAt: unknown }).createdAt
+                : undefined,
+            ),
+          ],
+        });
+      }
+    }
+    return null;
   }),
 });
